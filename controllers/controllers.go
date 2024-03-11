@@ -16,7 +16,7 @@ func HelloWorld(w http.ResponseWriter, r *http.Request) {
 }
 
 func GetCache(w http.ResponseWriter, r *http.Request) {
-	outPutList := handlers.GetTheListFromHeadToTail()
+	outPutList := handlers.AppCache.GetTheListFromHeadToTail()
 
 	outPutListJson, err := json.Marshal(outPutList)
 	if err != nil {
@@ -41,7 +41,7 @@ func UpdateCache(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf(err.Error())
 	}
 
-	node = handlers.UpdateCache(node.Key, node.Value, node.Expiration)
+	node = handlers.AppCache.UpdateCache(node.Key, node.Value, node.Expiration)
 
 	json, err := json.Marshal(node)
 	if err != nil {

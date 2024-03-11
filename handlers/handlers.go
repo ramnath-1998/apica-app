@@ -9,102 +9,115 @@ import (
 	"github.com/ramnath.1998/apica-app/models"
 )
 
+type CacheStruct struct {
+	Cache map[int]models.Node
+	Lock  sync.Mutex
+}
+
 var (
-	Cache      map[int]models.Node
+	AppCache   = &CacheStruct{}
 	Count      int
 	Capacity   int
 	Head, Tail models.Node
 	Lock       sync.Mutex
 )
 
-func RemoveExpired() {
+func (cache *CacheStruct) SetCache() {
+
+	AppCache = cache
+
+}
+
+func (cache *CacheStruct) RemoveExpired() {
+
 	count := 0
 	for {
-		Lock.Lock()
+		cache.Lock.Lock()
+
 		time.Sleep(1 * time.Second)
 		count++
 		log.Println("Count", count+1)
-		for key, value := range Cache {
+		for key, value := range cache.Cache {
 			if time.Since(value.IssuedAt) >= time.Duration(value.Expiration)*time.Second {
-				delete(Cache, key)
+				delete(cache.Cache, key)
 				fmt.Println("Removed expired key:", key)
 			}
 		}
-		Lock.Unlock()
+		cache.Lock.Unlock()
 	}
 }
 
-func GetTheListFromHeadToTail() []models.Node {
-	Lock.Lock()
-	defer Lock.Unlock()
+func (cache *CacheStruct) GetTheListFromHeadToTail() []models.Node {
+	cache.Lock.Lock()
+	defer cache.Lock.Unlock()
 
 	node := Head
 	resultList := []models.Node{}
 
-	for node.NextNode != nil {
-		node, exist := Cache[node.NextNode.Key]
+	for range cache.Cache {
+		nextNode, exist := cache.Cache[node.NextNode.Key]
 		if exist {
-			resultList = append(resultList, models.Node{Key: node.Key, Value: node.Value, Expiration: node.Expiration})
-
+			resultList = append(resultList, models.Node{Key: nextNode.Key, Value: nextNode.Value, IssuedAt: nextNode.IssuedAt, Expiration: nextNode.Expiration})
 		}
+		node = nextNode
 	}
 
 	return resultList
 }
 
-func NodeUpdateCache(node *models.Node) {
+func (cache *CacheStruct) NodeUpdateCache(node *models.Node) {
 
 	if node.NextNode == nil || node.PreviousNode == nil {
 		return
 	} else {
-		Cache[node.Key] = *node
+		cache.Cache[node.Key] = *node
 	}
 
 }
 
-func AddNode(node models.Node) models.Node {
+func (cache *CacheStruct) AddNode(node models.Node) models.Node {
 
 	nextOfHead := Head.NextNode
 	nextOfHead.PreviousNode = &node
 	node.NextNode = Head.NextNode
 	Head.NextNode = &node
 	node.PreviousNode = &Head
-	NodeUpdateCache(nextOfHead)
-	NodeUpdateCache(&node)
+	cache.NodeUpdateCache(nextOfHead)
+	cache.NodeUpdateCache(&node)
 
 	return node
 }
 
-func RemoveNode(node models.Node) {
+func (cache *CacheStruct) RemoveNode(node models.Node) {
 
 	previousNode := node.PreviousNode
 	nextNode := node.NextNode
 
 	previousNode.NextNode = nextNode
 	nextNode.PreviousNode = previousNode
-	NodeUpdateCache(previousNode)
-	NodeUpdateCache(nextNode)
-	delete(Cache, node.Key)
+	cache.NodeUpdateCache(previousNode)
+	cache.NodeUpdateCache(nextNode)
+	delete(cache.Cache, node.Key)
 }
 
-func MoveToHead(node models.Node) models.Node {
+func (cache *CacheStruct) MoveToHead(node models.Node) models.Node {
 
-	RemoveNode(node)
-	node = AddNode(node)
+	cache.RemoveNode(node)
+	node = cache.AddNode(node)
 
 	return node
 }
 
-func PopTail() {
+func (cache *CacheStruct) PopTail() {
 
 	nodeToBePopped := Tail.PreviousNode
-	RemoveNode(*nodeToBePopped)
+	cache.RemoveNode(*nodeToBePopped)
 
 }
 
-func InitializeCache(capacity int) {
+func (cache *CacheStruct) InitializeCache(capacity int) {
 
-	Cache = make(map[int]models.Node)
+	cache.Cache = make(map[int]models.Node)
 	Count = 0
 	Capacity = capacity
 	Head = models.Node{}
@@ -115,22 +128,27 @@ func InitializeCache(capacity int) {
 
 	Head.NextNode = &Tail
 	Tail.PreviousNode = &Head
+	cache.SetCache()
+
+	fmt.Println(cache)
+	fmt.Println(AppCache.Cache)
+
 }
 
-func UpdateCache(key int, value int, expiration int) models.Node {
+func (cache *CacheStruct) UpdateCache(key int, value int, expiration int) models.Node {
 	Lock.Lock()
 	defer Lock.Unlock()
 
-	node, exists := Cache[key]
+	node, exists := cache.Cache[key]
 
 	if exists {
 		node.Value = value
 		node.IssuedAt = time.Now().Local().UTC()
-		node = MoveToHead(node)
+		node = cache.MoveToHead(node)
 	} else {
 		Count = Count + 1
 		if Count > Capacity {
-			PopTail()
+			cache.PopTail()
 		}
 		newNode := models.Node{
 			Key:        key,
@@ -138,7 +156,7 @@ func UpdateCache(key int, value int, expiration int) models.Node {
 			IssuedAt:   time.Now().UTC(),
 			Expiration: expiration,
 		}
-		node = AddNode(newNode)
+		node = cache.AddNode(newNode)
 
 	}
 
